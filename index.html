@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <!-- ============================================================
+       ส่วนหัวของหน้าเว็บ (HEAD)
+       - ตั้งค่า viewport ให้พอดีจอมือถือ และ "ห้ามซูม"
+       - โหลดฟอนต์ภาษาไทย Mitr จาก Google Fonts
+       - โหลด A-Frame และ MindAR (เวอร์ชันตามที่กำหนด)
+       ============================================================ -->
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#ffd6e8" />
+  <title>🎂 Happy Birthday AR</title>
+
+  <!-- ฟอนต์ภาษาไทย -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- A-Frame ต้องโหลดก่อน MindAR เสมอ -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-face-aframe.prod.js"></script>
+
+  <style>
+    /* ============================================================
+       สไตล์ (CSS)
+       ============================================================ */
+
+    /* ---- กันหน้าเว็บเลื่อน/ซูม และให้เต็มจอทุกขนาด ---- */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;            /* ห้ามเลื่อน */
+      position: fixed;             /* กัน iOS เด้ง (bounce) */
+      inset: 0;
+      touch-action: none;          /* ห้าม pinch-zoom / double-tap zoom */
+      overscroll-behavior: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      background: #000;
+      font-family: 'Mitr', sans-serif;
+    }
+
+    /* ---- กล่องที่ใส่ฉาก AR (MindAR จะใส่วิดีโอกล้องไว้ในกล่องนี้) ---- */
+    #ar-container {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;              /* สูงพอดีจอจริงบนมือถือ */
+      overflow: hidden;
+    }
+
+    /* ---- หน้าจอเริ่มต้น (สีพาสเทล) ---- */
+    #start-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      padding: 24px;
+      box-sizing: border-box;
+      text-align: center;
+      background: linear-gradient(160deg, #ffd6e8 0%, #e8dcff 45%, #d4f1ff 100%);
+      transition: opacity 0.6s ease;
+    }
+    #start-screen.hide { opacity: 0; pointer-events: none; }
+
+    #start-screen h1 {
+      margin: 0;
+      font-size: clamp(26px, 7vw, 40px);
+      font-weight: 600;
+      color: #7a4fa0;
+      line-height: 1.3;
+    }
+    #start-screen p {
+      margin: 0;
+      color: #8a6fa8;
+      font-size: clamp(15px, 4vw, 18px);
+    }
+
+    /* อีโมจิลอยตกแต่งบนหน้าเริ่ม */
+    .float-emoji {
+      position: absolute;
+      font-size: 34px;
+      animation: floaty 3s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes floaty {
+      0%, 100% { transform: translateY(0) rotate(-6deg); }
+      50%      { transform: translateY(-16px) rotate(6deg); }
+    }
+
+    /* ปุ่มใหญ่ "แตะเพื่อเปิดของขวัญ" */
+    #start-btn {
+      font-family: 'Mitr', sans-serif;
+      font-size: clamp(20px, 6vw, 28px);
+      font-weight: 500;
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 20px 38px;
+      background: linear-gradient(135deg, #ff8fb8, #b48cff);
+      box-shadow: 0 10px 30px rgba(180, 100, 200, 0.45);
+      cursor: pointer;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    #start-btn:active { transform: scale(0.95); }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 10px 30px rgba(180,100,200,0.45); transform: scale(1); }
+      50%      { box-shadow: 0 10px 40px rgba(255,120,180,0.7);  transform: scale(1.05); }
+    }
+
+    /* ---- ข้อความแนะนำด้านบน "หันหน้าเข้ากล้อง" ---- */
+    #hint {
+      position: fixed;
+      top: calc(18px + env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      padding: 10px 20px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.85);
+      color: #7a4fa0;
+      font-size: 16px;
+      white-space: nowrap;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+      transition: opacity 0.4s ease;
+      opacity: 0;
+      pointer-events: none;
+    }
+    #hint.show { opacity: 1; }
+
+    /* ---- การ์ดคำอวยพรภาษาไทย (ด้านล่างจอ) ---- */
+    #thai-card {
+      position: fixed;
+      left: 50%;
+      bottom: calc(104px + env(safe-area-inset-bottom));
+      transform: translate(-50%, 20px);
+      z-index: 20;
+      width: min(88vw, 420px);
+      box-sizing: border-box;
+      padding: 16px 20px;
+      border-radius: 22px;
+      background: rgba(255, 245, 250, 0.92);
+      border: 3px solid #ffc2dc;
+      color: #8a3d6b;
+      font-size: clamp(16px, 4.6vw, 20px);
+      line-height: 1.5;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    #thai-card.show { opacity: 1; transform: translate(-50%, 0); }
+
+    /* ---- ปุ่มลอย (ปิด/เปิดเสียง และ ถ่ายรูป) ---- */
+    .fab {
+      position: fixed;
+      z-index: 30;
+      border: none;
+      font-family: 'Mitr', sans-serif;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+      display: none;                 /* ซ่อนไว้จนกว่าจะกดเริ่ม */
+    }
+    .fab.visible { display: block; }
+    .fab:active { transform: scale(0.92); }
+
+    #mute-btn {
+      top: calc(14px + env(safe-area-inset-top));
+      right: 14px;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      font-size: 22px;
+      background: rgba(255,255,255,0.85);
+    }
+
+    /* ปุ่มสำรอง "แตะเพื่อเปิดเพลง" (โผล่เฉพาะตอนที่มือถือบล็อกเสียง) */
+    #music-btn {
+      top: calc(72px + env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 22px;
+      border-radius: 999px;
+      font-size: 16px;
+      color: #fff;
+      background: #ff6fa8;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    #photo-btn {
+      left: 50%;
+      bottom: calc(24px + env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      padding: 14px 30px;
+      border-radius: 999px;
+      font-size: 18px;
+      color: #fff;
+      background: linear-gradient(135deg, #ff8fb8, #b48cff);
+    }
+    #photo-btn:active { transform: translateX(-50%) scale(0.94); }
+
+    /* ---- แฟลชตอนถ่ายรูป ---- */
+    #flash {
+      position: fixed; inset: 0; z-index: 40;
+      background: #fff; opacity: 0; pointer-events: none;
+      transition: opacity 0.35s ease;
+    }
+    #flash.on { opacity: 0.9; transition: none; }
+
+    /* ---- หน้าต่างแสดงรูปที่ถ่าย ---- */
+    #preview {
+      position: fixed; inset: 0; z-index: 50;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 20px;
+      box-sizing: border-box;
+      background: rgba(40, 20, 60, 0.85);
+    }
+    #preview.show { display: flex; }
+    #preview img {
+      max-width: 100%;
+      max-height: 65vh;
+      border-radius: 16px;
+      border: 4px solid #fff;
+      -webkit-touch-callout: default;  /* ให้กดค้างเพื่อบันทึกรูปบน iPhone ได้ */
+      pointer-events: auto;
+    }
+    #preview p { color: #fff; margin: 0; font-size: 14px; text-align: center; }
+    .preview-actions { display: flex; gap: 12px; }
+    .preview-actions button {
+      font-family: 'Mitr', sans-serif;
+      font-size: 17px;
+      border: none;
+      border-radius: 999px;
+      padding: 12px 24px;
+      cursor: pointer;
+    }
+    #save-btn  { background: #ff8fb8; color: #fff; }
+    #close-btn { background: #fff; color: #7a4fa0; }
+
+    /* ---- ข้อความแจ้งข้อผิดพลาด ---- */
+    #error-box {
+      position: fixed; inset: 0; z-index: 60;
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 30px; box-sizing: border-box;
+      background: linear-gradient(160deg, #ffd6e8, #e8dcff);
+      color: #7a4fa0; text-align: center; font-size: 18px; line-height: 1.6;
+    }
+    #error-box.show { display: flex; }
+  </style>
+</head>
+
+<body>
+  <!-- ============================================================
+       1) หน้าจอเริ่มต้น
+       ต้องให้ผู้ใช้ "แตะ" ก่อน เพราะมือถือไม่อนุญาตให้เล่นเพลงเองอัตโนมัติ
+       ============================================================ -->
+  <div id="start-screen">
+    <span class="float-emoji" style="top:10%; left:12%;">🎈</span>
+    <span class="float-emoji" style="top:16%; right:14%; animation-delay:.6s;">🎉</span>
+    <span class="float-emoji" style="bottom:18%; left:16%; animation-delay:1.2s;">🎁</span>
+    <span class="float-emoji" style="bottom:12%; right:12%; animation-delay:.3s;">✨</span>
+
+    <h1>มีของขวัญมาส่งจ้า 🎁</h1>
+    <button id="start-btn">🎂 แตะเพื่อเปิดของขวัญ</button>
+    <p>แนะนำให้เปิดเสียง และอนุญาตให้ใช้กล้องนะ</p>
+  </div>
+
+  <!-- ============================================================
+       2) ไฟล์เพลง (วางไฟล์เพลงไว้โฟลเดอร์เดียวกับ index.html)
+       loop = เล่นวนซ้ำ, playsinline = เล่นในหน้าเว็บบน iPhone
+       ============================================================ -->
+  <audio id="bgm" src="song.mp3" loop playsinline preload="auto"></audio>
+
+  <!-- ============================================================
+       3) ส่วนแสดงผลบนจอ (HTML ทับฉาก AR)
+       ============================================================ -->
+  <div id="hint">กำลังเปิดกล้อง... 📷</div>
+  <div id="thai-card"></div>
+  <button id="mute-btn" class="fab" aria-label="ปิดหรือเปิดเสียง">🔊</button>
+  <button id="music-btn" class="fab">🎵 แตะเพื่อเปิดเพลง</button>
+  <button id="photo-btn" class="fab">📸 ถ่ายรูป</button>
+  <div id="flash"></div>
+
+  <div id="preview">
+    <img id="preview-img" alt="รูปที่ถ่าย" />
+    <p>บน iPhone: กดค้างที่รูปแล้วเลือก "บันทึกไปยังรูปภาพ" ได้เลย</p>
+    <div class="preview-actions">
+      <button id="save-btn">💾 บันทึกรูป</button>
+      <button id="close-btn">ปิด</button>
+    </div>
+  </div>
+
+  <div id="error-box"></div>
+
+  <!-- ============================================================
+       4) ฉาก AR (A-Frame + MindAR Face Tracking)
+       - autoStart: false  → ยังไม่เปิดกล้องจนกว่าจะกดปุ่ม
+       - uiLoading/uiScanning/uiError: no → ปิดหน้าจอโหลดของ MindAR (เราทำเอง)
+       - MindAR ใช้กล้องหน้า (เซลฟี่) เป็นค่าเริ่มต้นอยู่แล้ว
+       ============================================================ -->
+  <div id="ar-container">
+    <a-scene
+      id="scene"
+      mindar-face="autoStart: false; uiLoading: no; uiScanning: no; uiError: no"
+      embedded
+      color-space="sRGB"
+      renderer="colorManagement: true; antialias: true; alpha: true"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false"
+      loading-screen="enabled: false">
+
+      <!-- กล้องของฉาก (MindAR จะควบคุมเอง) -->
+      <a-camera active="false" position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
+
+      <!-- แสงพื้นฐาน (ใช้แค่ 2 ดวง เพื่อให้มือถือลื่น) -->
+      <a-light type="ambient" color="#ffffff" intensity="0.8"></a-light>
+      <a-light type="directional" color="#ffffff" intensity="0.7" position="0 1 1"></a-light>
+
+      <!-- ========================================================
+           จุดยึดบนใบหน้า anchorIndex: 10 = หน้าผากด้านบน
+           ทุกอย่างที่อยู่ข้างในจะขยับตามศีรษะ
+           ======================================================== -->
+      <a-entity id="face-anchor" mindar-face-target="anchorIndex: 10">
+
+        <!-- ---------- 4.1 หมวกปาร์ตี้ (เอียงเล็กน้อย) ---------- -->
+        <a-entity position="0 0.38 -0.25" rotation="0 0 12">
+          <!-- ตัวหมวก: กรวย (segments น้อย = low-poly) -->
+          <a-cone
+            position="0 0.3 0"
+            height="0.65"
+            radius-bottom="0.3"
+            radius-top="0.01"
+            segments-radial="16"
+            color="#ff6fa8"></a-cone>
+          <!-- แถบลายบนหมวก -->
+          <a-torus position="0 0.18 0" rotation="90 0 0" radius="0.215" radius-tubular="0.022"
+                   segments-radial="6" segments-tubular="16" color="#ffe066"></a-torus>
+          <a-torus position="0 0.4 0" rotation="90 0 0" radius="0.115" radius-tubular="0.018"
+                   segments-radial="6" segments-tubular="16" color="#7fd6ff"></a-torus>
+          <!-- ขอบหมวกด้านล่าง -->
+          <a-torus position="0 -0.02 0" rotation="90 0 0" radius="0.3" radius-tubular="0.03"
+                   segments-radial="6" segments-tubular="20" color="#b48cff"></a-torus>
+          <!-- ปอมปอมด้านบน (เด้งเบา ๆ) -->
+          <a-sphere
+            position="0 0.65 0"
+            radius="0.075"
+            segments-width="10"
+            segments-height="8"
+            color="#ffffff"
+            animation="property: scale; from: 1 1 1; to: 1.2 1.2 1.2; dir: alternate; loop: true; dur: 600; easing: easeInOutSine"></a-sphere>
+        </a-entity>
+
+        <!-- ---------- 4.2 ข้อความ 3 มิติ ลอยขึ้นลง (สีทอง) ----------
+             หมายเหตุ: ฟอนต์ 3D ของ A-Frame แสดงภาษาไทยไม่ได้ ใช้ภาษาอังกฤษเท่านั้น
+             ชื่อจะถูกใส่จาก CONFIG ด้านล่าง -->
+        <a-text
+          id="bday-text"
+          value="Happy Birthday!"
+          color="#FFD700"
+          align="center"
+          width="2.6"
+          side="double"
+          position="0 1.25 -0.25"
+          animation="property: position; from: 0 1.2 -0.25; to: 0 1.32 -0.25; dir: alternate; loop: true; dur: 1400; easing: easeInOutSine"></a-text>
+
+        <!-- ---------- 4.3 ลูกโป่ง 2 ลูก ซ้าย-ขวา ---------- -->
+        <!-- ลูกโป่งซ้าย -->
+        <a-entity position="-0.85 0.5 -0.4"
+                  animation="property: position; from: -0.85 0.45 -0.4; to: -0.85 0.62 -0.4; dir: alternate; loop: true; dur: 1800; easing: easeInOutSine">
+          <a-sphere radius="0.16" scale="1 1.2 1" segments-width="10" segments-height="8" color="#ff7eb6"></a-sphere>
+          <a-cylinder position="0 -0.38 0" radius="0.006" height="0.42" segments-radial="4" color="#ffffff"></a-cylinder>
+        </a-entity>
+        <!-- ลูกโป่งขวา -->
+        <a-entity position="0.85 0.55 -0.4"
+                  animation="property: position; from: 0.85 0.62 -0.4; to: 0.85 0.45 -0.4; dir: alternate; loop: true; dur: 2100; easing: easeInOutSine">
+          <a-sphere radius="0.16" scale="1 1.2 1" segments-width="10" segments-height="8" color="#7fd6ff"></a-sphere>
+          <a-cylinder position="0 -0.38 0" radius="0.006" height="0.42" segments-radial="4" color="#ffffff"></a-cylinder>
+        </a-entity>
+
+        <!-- ---------- 4.4 คอนเฟตตี (ชิ้นเล็ก ๆ หมุน + ลอย) ----------
+             ใช้ shader: flat = ไม่คำนวณแสง ประหยัดแรงเครื่อง -->
+        <a-box position="-0.55 0.95 -0.3" width="0.06" height="0.06" depth="0.015"
+               material="shader: flat; color: #ffe066"
+               animation__spin="property: rotation; to: 360 360 0; loop: true; dur: 2500; easing: linear"
+               animation__float="property: position; from: -0.55 0.9 -0.3; to: -0.55 1.02 -0.3; dir: alternate; loop: true; dur: 1500; easing: easeInOutSine"></a-box>
+        <a-box position="0.6 1.0 -0.3" width="0.06" height="0.06" depth="0.015"
+               material="shader: flat; color: #b48cff"
+               animation__spin="property: rotation; to: 0 360 360; loop: true; dur: 2200; easing: linear"
+               animation__float="property: position; from: 0.6 1.05 -0.3; to: 0.6 0.92 -0.3; dir: alternate; loop: true; dur: 1700; easing: easeInOutSine"></a-box>
+        <a-sphere position="-0.95 0.95 -0.35" radius="0.035" segments-width="6" segments-height="4"
+                  material="shader: flat; color: #7fffc4"
+                  animation__float="property: position; from: -0.95 0.9 -0.35; to: -0.95 1.05 -0.35; dir: alternate; loop: true; dur: 1300; easing: easeInOutSine"></a-sphere>
+        <a-sphere position="0.95 0.9 -0.35" radius="0.035" segments-width="6" segments-height="4"
+                  material="shader: flat; color: #ff9f6b"
+                  animation__float="property: position; from: 0.95 0.95 -0.35; to: 0.95 0.82 -0.35; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine"></a-sphere>
+        <a-box position="-0.35 1.55 -0.3" width="0.05" height="0.05" depth="0.015"
+               material="shader: flat; color: #ff6fa8"
+               animation__spin="property: rotation; to: 360 0 360; loop: true; dur: 2800; easing: linear"
+               animation__float="property: position; from: -0.35 1.5 -0.3; to: -0.35 1.62 -0.3; dir: alternate; loop: true; dur: 1900; easing: easeInOutSine"></a-box>
+        <a-box position="0.38 1.55 -0.3" width="0.05" height="0.05" depth="0.015"
+               material="shader: flat; color: #7fd6ff"
+               animation__spin="property: rotation; to: 0 360 360; loop: true; dur: 2400; easing: linear"
+               animation__float="property: position; from: 0.38 1.62 -0.3; to: 0.38 1.5 -0.3; dir: alternate; loop: true; dur: 1500; easing: easeInOutSine"></a-box>
+      </a-entity>
+    </a-scene>
+  </div>
+
+  <script>
+    /* ============================================================
+       5) ตั้งค่า (แก้ตรงนี้ที่เดียว!)
+       ============================================================ */
+    const CONFIG = {
+      // ชื่อคนเกิด — ต้องเป็นภาษาอังกฤษ (ฟอนต์ 3D แสดงภาษาไทยไม่ได้)
+      name: 'Kanoon',
+      // คำอวยพรภาษาไทย (แสดงในการ์ดด้านล่าง) ขึ้นบรรทัดใหม่ด้วย \n
+      thaiMessage: 'สุขสันต์วันเกิดย้อนหลังนะคะ 🎂\nของขวัญอาจมาช้าไปหน่อย แต่พี่ตั้งใจซื้อตามคลิปที่หนูเคยส่งให้ดู\nขอให้หนูมีความสุขในทุกวันนะคะ',
+      // ชื่อไฟล์เพลง (วางไว้ข้าง index.html)
+      musicFile: 'song.mp3',
+      // ระดับเสียง 0.0 - 1.0
+      volume: 0.8
+    };
+
+    /* ============================================================
+       6) ดึง element ต่าง ๆ มาใช้งาน
+       ============================================================ */
+    const sceneEl     = document.getElementById('scene');
+    const container   = document.getElementById('ar-container');
+    const faceAnchor  = document.getElementById('face-anchor');
+    const bdayText    = document.getElementById('bday-text');
+    const startScreen = document.getElementById('start-screen');
+    const startBtn    = document.getElementById('start-btn');
+    const bgm         = document.getElementById('bgm');
+    const hint        = document.getElementById('hint');
+    const thaiCard    = document.getElementById('thai-card');
+    const muteBtn     = document.getElementById('mute-btn');
+    const musicBtn    = document.getElementById('music-btn');
+    const photoBtn    = document.getElementById('photo-btn');
+    const flash       = document.getElementById('flash');
+    const preview     = document.getElementById('preview');
+    const previewImg  = document.getElementById('preview-img');
+    const saveBtn     = document.getElementById('save-btn');
+    const closeBtn    = document.getElementById('close-btn');
+    const errorBox    = document.getElementById('error-box');
+
+    // ใส่ข้อความจาก CONFIG ลงในหน้า
+    bdayText.setAttribute('value', `Happy Birthday ${CONFIG.name}!`);
+    thaiCard.textContent = CONFIG.thaiMessage;
+    thaiCard.style.whiteSpace = 'pre-line';     // ให้ \n ขึ้นบรรทัดใหม่
+    bgm.src = CONFIG.musicFile;
+
+    /* ============================================================
+       7) กันการซูม/เลื่อนเพิ่มเติม (โดยเฉพาะ Safari iPhone)
+       ============================================================ */
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(evt =>
+      document.addEventListener(evt, e => e.preventDefault(), { passive: false })
+    );
+    document.addEventListener('touchmove', e => {
+      if (e.touches.length > 1) e.preventDefault();          // กันนิ้วสองนิ้วซูม
+    }, { passive: false });
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', e => {             // กันแตะสองครั้งแล้วซูม
+      const now = Date.now();
+      if (now - lastTouchEnd < 300) e.preventDefault();
+      lastTouchEnd = now;
+    }, { passive: false });
+
+    /* ============================================================
+       7.5) ระบบเพลง (กันเพลงไม่ดัง)
+       ปัญหาที่พบบ่อย:
+         - iPhone: พอเปิดกล้อง ระบบจะ "หยุดเพลง" ให้เอง → ต้องสั่งเล่นใหม่
+         - ไฟล์เพลงชื่อไม่ตรง (GitHub Pages แยกตัวพิมพ์เล็ก/ใหญ่ เช่น Song.mp3 ≠ song.mp3)
+         - มือถือบล็อกเสียง → แสดงปุ่ม "แตะเพื่อเปิดเพลง" ให้กดอีกครั้ง
+       ============================================================ */
+    let musicWanted = false;   // ผู้ใช้อยากฟังเพลง (กดเริ่มแล้ว และไม่ได้กดปิดเสียง)
+
+    // บอก iPhone (iOS 16.4+) ว่านี่คือ "การเล่นเพลง" เพื่อให้เสียงออกลำโพงเต็มที่
+    function setPlaybackAudioSession() {
+      try {
+        if (navigator.audioSession) navigator.audioSession.type = 'playback';
+      } catch (e) {}
+    }
+
+    // พยายามเล่นเพลง ถ้าไม่สำเร็จจะโชว์ปุ่มสำรองให้แตะ
+    function tryPlayMusic() {
+      if (!musicWanted || bgm.muted) return;
+      setPlaybackAudioSession();
+      bgm.volume = CONFIG.volume;
+      const p = bgm.play();
+      if (p && p.catch) {
+        p.then(() => musicBtn.classList.remove('visible'))
+         .catch(err => {
+           console.warn('เล่นเพลงไม่ได้:', err);
+           if (err.name === 'NotAllowedError') musicBtn.classList.add('visible');
+         });
+      }
+    }
+
+    // ปุ่มสำรอง: แตะแล้วเล่นเพลง (เป็นการแตะของผู้ใช้ มือถือจึงยอมให้เล่น)
+    musicBtn.addEventListener('click', () => {
+      bgm.muted = false;
+      muteBtn.textContent = '🔊';
+      tryPlayMusic();
+    });
+
+    // ถ้าเพลงถูกหยุดเอง (ไม่ใช่เพราะผู้ใช้กดปิด) → ลองเล่นต่อ
+    bgm.addEventListener('pause', () => {
+      if (musicWanted && !bgm.muted && !document.hidden) {
+        setTimeout(tryPlayMusic, 300);
+      }
+    });
+    bgm.addEventListener('playing', () => musicBtn.classList.remove('visible'));
+
+    // หาไฟล์เพลงไม่เจอ → แจ้งเตือนบนจอ
+    bgm.addEventListener('error', () => {
+      hint.textContent = `⚠️ หาไฟล์เพลง "${CONFIG.musicFile}" ไม่เจอ`;
+      hint.classList.add('show');
+      console.error('โหลดไฟล์เพลงไม่ได้ ตรวจชื่อไฟล์และตำแหน่งไฟล์:', CONFIG.musicFile);
+    });
+
+    /* ============================================================
+       8) เมื่อแตะปุ่มเริ่ม → เล่นเพลง + เปิดกล้อง + เริ่ม AR
+       สำคัญ: ต้องสั่งเล่นเพลง "ทันที" ในเหตุการณ์แตะ
+       ไม่อย่างนั้นมือถือจะบล็อกเสียง
+       ============================================================ */
+    let started = false;
+
+    startBtn.addEventListener('click', () => {
+      if (started) return;
+      started = true;
+
+      // 8.1 เล่นเพลงทันที (ในจังหวะเดียวกับการแตะ)
+      musicWanted = true;
+      bgm.loop = true;
+      bgm.muted = false;
+      tryPlayMusic();
+
+      // 8.2 ซ่อนหน้าเริ่ม แสดงปุ่มลอยและข้อความแนะนำ
+      startScreen.classList.add('hide');
+      setTimeout(() => (startScreen.style.display = 'none'), 700);
+      muteBtn.classList.add('visible');
+      photoBtn.classList.add('visible');
+      hint.textContent = 'กำลังเปิดกล้อง... 📷';
+      hint.classList.add('show');
+
+      // 8.3 เริ่ม MindAR (จะขออนุญาตใช้กล้องหน้า)
+      const startAR = () => {
+        const arSystem = sceneEl.systems['mindar-face-system'];
+        arSystem.start();
+      };
+      if (sceneEl.hasLoaded) startAR();
+      else sceneEl.addEventListener('loaded', startAR, { once: true });
+    });
+
+    /* ============================================================
+       9) เหตุการณ์ของ MindAR
+       ============================================================ */
+
+    // 9.1 กล้องพร้อมแล้ว → บอกให้หันหน้าเข้ากล้อง
+    sceneEl.addEventListener('arReady', () => {
+      hint.textContent = 'หันหน้าเข้ากล้องได้เลย 😊';
+      hint.classList.add('show');
+
+      // บน iPhone การเปิดกล้องมักทำให้เพลงหยุด → สั่งเล่นอีกครั้ง (ลองซ้ำ 2 ครั้ง)
+      tryPlayMusic();
+      setTimeout(() => { if (bgm.paused) tryPlayMusic(); }, 800);
+      setTimeout(() => { if (bgm.paused) musicBtn.classList.add('visible'); }, 1600);
+    });
+
+    // 9.2 เปิดกล้องไม่ได้ (ไม่อนุญาต / ไม่ใช่ HTTPS)
+    sceneEl.addEventListener('arError', () => {
+      errorBox.innerHTML =
+        'เปิดกล้องไม่ได้ 😢<br>กรุณากด "อนุญาต" ให้ใช้กล้อง<br>และเปิดลิงก์ผ่าน HTTPS (เช่น GitHub Pages)<br><br>แล้วรีเฟรชหน้านี้อีกครั้ง';
+      errorBox.classList.add('show');
+      hint.classList.remove('show');
+    });
+
+    // 9.3 เจอใบหน้า → ซ่อนคำแนะนำ แล้วค่อย ๆ แสดงการ์ดหลัง 1 วินาที
+    let cardTimer = null;
+    faceAnchor.addEventListener('targetFound', () => {
+      hint.classList.remove('show');
+      clearTimeout(cardTimer);
+      cardTimer = setTimeout(() => thaiCard.classList.add('show'), 1000);
+    });
+
+    // 9.4 ใบหน้าหายไป → ซ่อนการ์ด และแสดงคำแนะนำอีกครั้ง
+    faceAnchor.addEventListener('targetLost', () => {
+      clearTimeout(cardTimer);
+      thaiCard.classList.remove('show');
+      hint.textContent = 'หันหน้าเข้ากล้องได้เลย 😊';
+      hint.classList.add('show');
+    });
+
+    /* ============================================================
+       10) ปุ่มปิด/เปิดเสียง 🔊 / 🔇
+       ============================================================ */
+    muteBtn.addEventListener('click', () => {
+      bgm.muted = !bgm.muted;
+      muteBtn.textContent = bgm.muted ? '🔇' : '🔊';
+      if (bgm.muted) musicBtn.classList.remove('visible');
+      else tryPlayMusic();
+    });
+
+    /* ============================================================
+       11) ถ่ายรูป 📸
+       รวม 3 ชั้นเป็นรูปเดียว:
+         (1) ภาพจากกล้อง  (2) ฉาก AR 3 มิติ  (3) การ์ดคำอวยพรภาษาไทย
+       ============================================================ */
+
+    // วาด element (วิดีโอ/แคนวาส) ลงรูป ตามตำแหน่งที่เห็นบนจอจริง
+    // ถ้าภาพถูกกลับซ้าย-ขวา (โหมดกระจกของกล้องหน้า) ก็จะกลับให้ตรงกัน
+    function drawElement(ctx, el, containerRect) {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const x = r.left - containerRect.left;
+      const y = r.top - containerRect.top;
+      const mirrored = /^matrix\(-1/.test(getComputedStyle(el).transform);
+      ctx.save();
+      if (mirrored) {
+        ctx.translate(x + r.width, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(el, 0, 0, r.width, r.height);
+      } else {
+        ctx.drawImage(el, x, y, r.width, r.height);
+      }
+      ctx.restore();
+    }
+
+    // ตัดคำภาษาไทยให้พอดีความกว้าง (ใช้ Intl.Segmenter ถ้าเบราว์เซอร์รองรับ)
+    function wrapThai(ctx, text, maxWidth) {
+      const lines = [];
+      text.split('\n').forEach(paragraph => {
+        let pieces;
+        if (window.Intl && Intl.Segmenter) {
+          const seg = new Intl.Segmenter('th', { granularity: 'word' });
+          pieces = Array.from(seg.segment(paragraph), s => s.segment);
+        } else {
+          pieces = Array.from(paragraph);
+        }
+        let line = '';
+        pieces.forEach(p => {
+          const test = line + p;
+          if (ctx.measureText(test).width > maxWidth && line) {
+            lines.push(line.trim());
+            line = p;
+          } else {
+            line = test;
+          }
+        });
+        if (line.trim()) lines.push(line.trim());
+      });
+      return lines;
+    }
+
+    // วาดการ์ดคำอวยพรลงในรูป (เฉพาะตอนที่การ์ดแสดงอยู่)
+    function drawThaiCard(ctx, containerRect) {
+      if (!thaiCard.classList.contains('show')) return;
+      const r = thaiCard.getBoundingClientRect();
+      const x = r.left - containerRect.left;
+      const y = r.top - containerRect.top;
+      const fontSize = parseFloat(getComputedStyle(thaiCard).fontSize);
+
+      // พื้นการ์ดมุมโค้ง
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 245, 250, 0.92)';
+      ctx.strokeStyle = '#ffc2dc';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, r.width, r.height, 22);
+      else ctx.rect(x, y, r.width, r.height);
+      ctx.fill();
+      ctx.stroke();
+
+      // ตัวอักษร
+      ctx.fillStyle = '#8a3d6b';
+      ctx.font = `400 ${fontSize}px Mitr, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const lines = wrapThai(ctx, CONFIG.thaiMessage, r.width - 40);
+      const lineH = fontSize * 1.5;
+      const startY = y + r.height / 2 - ((lines.length - 1) * lineH) / 2;
+      lines.forEach((ln, i) => ctx.fillText(ln, x + r.width / 2, startY + i * lineH));
+      ctx.restore();
+    }
+
+    // ฟังก์ชันหลักสำหรับสร้างรูป
+    function captureScreenshot() {
+      const rect  = container.getBoundingClientRect();
+      const scale = Math.min(window.devicePixelRatio || 1, 2);   // จำกัดความละเอียดไม่ให้ไฟล์ใหญ่เกิน
+      const out = document.createElement('canvas');
+      out.width  = Math.round(rect.width * scale);
+      out.height = Math.round(rect.height * scale);
+      const ctx = out.getContext('2d');
+      ctx.scale(scale, scale);
+
+      // (1) ภาพจากกล้อง (MindAR ใส่ <video> ไว้ในกล่อง ar-container)
+      const video = container.querySelector('video') || document.querySelector('video');
+      if (video && video.readyState >= 2) drawElement(ctx, video, rect);
+
+      // (2) ฉาก AR — สั่งวาดใหม่ทันทีก่อนคัดลอก เพื่อไม่ให้ได้ภาพว่าง
+      if (sceneEl.renderer && sceneEl.camera) {
+        sceneEl.renderer.render(sceneEl.object3D, sceneEl.camera);
+        drawElement(ctx, sceneEl.canvas, rect);
+      }
+
+      // (3) การ์ดคำอวยพรภาษาไทย
+      drawThaiCard(ctx, rect);
+
+      return out;
+    }
+
+    let lastBlob = null;
+    let lastUrl  = null;
+
+    photoBtn.addEventListener('click', () => {
+      // เอฟเฟกต์แฟลช
+      flash.classList.add('on');
+      requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.remove('on')));
+
+      const canvas = captureScreenshot();
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        lastBlob = blob;
+        if (lastUrl) URL.revokeObjectURL(lastUrl);
+        lastUrl = URL.createObjectURL(blob);
+        previewImg.src = lastUrl;
+        preview.classList.add('show');
+      }, 'image/png');
+    });
+
+    // บันทึกรูป: มือถือที่รองรับจะเปิดเมนูแชร์ (เลือก "บันทึกรูป" ได้)
+    // ถ้าไม่รองรับ จะดาวน์โหลดเป็นไฟล์ PNG
+    saveBtn.addEventListener('click', async () => {
+      if (!lastBlob) return;
+      const fileName = `happy-birthday-${Date.now()}.png`;
+      const file = new File([lastBlob], fileName, { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Happy Birthday 🎂' });
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;   // ผู้ใช้กดยกเลิกเอง
+        }
+      }
+      const a = document.createElement('a');
+      a.href = lastUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+
+    closeBtn.addEventListener('click', () => preview.classList.remove('show'));
+
+    /* ============================================================
+       12) ถ้าผู้ใช้สลับแอปแล้วกลับมา → เล่นเพลงต่อ
+       ============================================================ */
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && started && bgm.paused) tryPlayMusic();
+    });
+  </script>
+</body>
+</html>
